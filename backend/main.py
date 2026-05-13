@@ -37,6 +37,15 @@ API_URL = "https://api.fashn.ai/v1/run"
 lock = Lock()
 
 
+@app.get("/api/health")
+async def health_check():
+    """Check if backend is running and API key is configured"""
+    return {
+        "status": "healthy",
+        "api_key_configured": bool(VTON_API_KEY),
+        "api_key_length": len(VTON_API_KEY) if VTON_API_KEY else 0
+    }
+
 # 🔥 IMAGE PREPROCESSING FOR BETTER GARMENT DETECTION
 def enhance_garment_image(image_bytes: bytes) -> bytes:
     """
@@ -91,6 +100,8 @@ async def generate_tryon(
     dress_url: str = Form(...),
     category: str = Form("one-pieces"),  # Kept for future compatibility / logging
 ):
+    logger.info(f"📥 Received request - Person image: {person_img.filename}, Dress URL type: {dress_url[:30]}...")
+    
     if lock.locked():
         logger.warning("Another request is already processing, returning 429.")
         raise HTTPException(status_code=429, detail="Another request is already processing. Please try again shortly.")
@@ -102,22 +113,29 @@ async def generate_tryon(
 
         try:
             # 1. Process Person Image
+            logger.info(f"Processing person image: {person_img.filename}")
             person_bytes = await person_img.read()
+            logger.info(f"Person image size: {len(person_bytes)} bytes")
             person_b64 = base64.b64encode(person_bytes).decode("utf-8")
             person_data_uri = f"data:{person_img.content_type};base64,{person_b64}"
 
             # 2. Process Garment Image (Enhance if it's a data URL)
             product_image_url = dress_url
             if dress_url.startswith("data:"):
+                logger.info("Processing garment as data URL")
                 try:
                     header, encoded = dress_url.split(",", 1)
                     dress_bytes = base64.b64decode(encoded)
+                    logger.info(f"Dress image size before enhancement: {len(dress_bytes)} bytes")
                     enhanced_bytes = enhance_garment_image(dress_bytes)
+                    logger.info(f"Dress image size after enhancement: {len(enhanced_bytes)} bytes")
                     enhanced_b64 = base64.b64encode(enhanced_bytes).decode("utf-8")
                     product_image_url = f"data:image/png;base64,{enhanced_b64}"
                     logger.info("✅ Garment image enhanced")
                 except Exception as e:
                     logger.error(f"❌ Error preprocessing garment: {str(e)}")
+            else:
+                logger.info(f"Using garment URL: {dress_url[:100]}")
 
             # 3. Prepare API Payload for tryon-max (Clean & Minimal)
             # Only model_image + product_image are required.
@@ -148,41 +166,58 @@ async def generate_tryon(
 
             # 4. Start Generation Request
             logger.info("🚀 Sending request to tryon-max...")
-            response = requests.post(API_URL, json=payload, headers=headers)
+            logger.info(f"API URL: {API_URL}")
+            logger.info(f"Payload: {payload}")
+            
+            try:
+                response = requests.post(API_URL, json=payload, headers=headers, timeout=30)
+            except requests.exceptions.RequestException as req_error:
+                logger.error(f"❌ Request failed: {str(req_error)}")
+                return {"error": "Failed to connect to fashn.ai API", "details": str(req_error)}
+            
             res_data = response.json()
 
             if response.status_code != 200:
-                logger.error(f"API Error: {res_data}")
-                return {"error": "Fashn.ai request failed", "details": res_data}
+                logger.error(f"API Error Status {response.status_code}: {res_data}")
+                return {"error": f"Fashn.ai returned status {response.status_code}", "details": res_data}
 
             prediction_id = res_data.get("id")
             if not prediction_id:
+                logger.error(f"No prediction ID in response: {res_data}")
                 return {"error": "No prediction ID returned", "details": res_data}
 
             # 5. Polling for Result
             status_url = f"https://api.fashn.ai/v1/status/{prediction_id}"
             logger.info(f"⏳ Generation started with ID: {prediction_id}")
+            logger.info(f"Status URL: {status_url}")
 
             for attempt in range(25):  # Increased attempts slightly
                 await asyncio.sleep(8 if attempt < 6 else 12)  # Better timing
                 
-                status_res = requests.get(status_url, headers=headers)
-                status_data = status_res.json()
+                try:
+                    status_res = requests.get(status_url, headers=headers, timeout=30)
+                    status_data = status_res.json()
+                except requests.exceptions.RequestException as req_error:
+                    logger.error(f"❌ Status check failed: {str(req_error)}")
+                    continue
                 
                 status = status_data.get("status")
-                logger.info(f"Attempt {attempt+1}: Status = {status}")
+                logger.info(f"Attempt {attempt+1}/25: Status = {status}")
 
                 if status == "completed":
                     output = status_data.get("output", [])
                     if output:
                         logger.info("✅ Generation successful")
                         return {"image_url": output[0]}
+                    logger.error(f"No output in completed response: {status_data}")
                     return {"error": "No output image", "details": status_data}
 
                 if status == "failed":
-                    logger.error(f"❌ Generation failed: {status_data}")
+                    error_msg = status_data.get("error", "Unknown error")
+                    logger.error(f"❌ Generation failed: {error_msg}")
                     return {"error": "Generation failed", "details": status_data}
 
+            logger.error(f"❌ Polling timeout after 25 attempts")
             return {"error": "Timeout: generation took too long"}
 
         except Exception as e:

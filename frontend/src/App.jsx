@@ -138,16 +138,21 @@ function App() {
 
       console.log("API RESPONSE:", response.data);
 
-      if (response.data?.image_url) {
+      if (response.data?.error) {
+        console.error("Backend Error:", response.data.error, response.data.details);
+        alert(`⚠️ Generation failed: ${response.data.error}\n\nDetails: ${JSON.stringify(response.data.details)}`);
+      } else if (response.data?.image_url) {
         setGeneratedImage(response.data.image_url);
         alert("✅ Your look is ready! The AI enhanced your garment selection for better try-on results.");
       } else {
-        alert("No image returned from backend");
+        console.error("Unexpected response:", response.data);
+        alert("⚠️ Generation failed. Unexpected response from backend.");
       }
 
     } catch (error) {
       console.error("AI Generation failed:", error);
-      alert("⚠️ Generation failed. Please ensure your garment image is clear and well-lit.");
+      const errorMsg = error.response?.data?.error || error.message || "Unknown error";
+      alert(`⚠️ Generation failed: ${errorMsg}`);
     } finally {
       setLoading(false);
       isGeneratingRef.current = false;
