@@ -23,10 +23,16 @@ logger = logging.getLogger(__name__)
 # CORS Configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://vton-xi.vercel.app",
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "*"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    max_age=3600,
 )
 
 # Environment Variables
@@ -45,6 +51,12 @@ async def health_check():
         "api_key_configured": bool(VTON_API_KEY),
         "api_key_length": len(VTON_API_KEY) if VTON_API_KEY else 0
     }
+
+
+@app.options("/api/generate-tryon")
+async def preflight_generate_tryon():
+    """Handle CORS preflight requests"""
+    return {"status": "ok"}
 
 # 🔥 IMAGE PREPROCESSING FOR BETTER GARMENT DETECTION
 def enhance_garment_image(image_bytes: bytes) -> bytes:
