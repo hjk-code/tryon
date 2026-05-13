@@ -132,7 +132,7 @@ function App() {
 
     try {
       const response = await axios.post(
-        'https://8000-i4vy013t8njhcmwlelezr-6c7dd1e5.us2.manus.computer/api/generate-tryon',
+        'https://8000-itbs3e41rgze8pg75vw0h-c232b2cc.us2.manus.computer/api/generate-tryon',
         formData
       );
 
