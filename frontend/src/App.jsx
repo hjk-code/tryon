@@ -135,6 +135,7 @@ function App() {
         'https://8000-itbs3e41rgze8pg75vw0h-c232b2cc.us2.manus.computer/api/generate-tryon',
         formData
       );
+      
 
       console.log("API RESPONSE:", response.data);
 
