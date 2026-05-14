@@ -21,15 +21,11 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 # CORS Configuration
+# Allow browser access from any origin for this public API endpoint.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://vton-xi.vercel.app",
-        "http://localhost:5173",
-        "http://localhost:3000",
-        "*"
-    ],
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
     max_age=3600,
